@@ -28,6 +28,15 @@ function drawNode(node, isHighlighted = false) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(node.id, node.x, node.y);
+  
+  // === ОПЦИОНАЛЬНО: отображение потенциалов ===
+  const currentStepData = algoSteps?.steps?.[currentStepIndex];
+  if (currentStepData?.potentials?.[node.id] !== undefined) {
+    ctx.fillStyle = '#7f8c8d';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`h=${currentStepData.potentials[node.id]}`, node.x, node.y + 18);
+  }
 }
 
 function drawEdge(edge, flow = null, isHighlighted = false) {
@@ -368,7 +377,37 @@ async function startAlgorithm() {
       throw new Error(`HTTP ${response.status}: ${JSON.stringify(errorData.detail || 'Неизвестная ошибка')}`);
     }
     
-    algoSteps = await response.json();
+    // Получаем результат
+    const result = await response.json();
+    
+    // === ОБНОВЛЕННАЯ ОБРАБОТКА ОШИБОК АЛГОРИТМА ===
+    if (result.status === "error") {
+      let message = result.message || "Неизвестная ошибка алгоритма";
+      let color = "#e74c3c";
+      
+      if (result.error_type === "negative_cycle_in_input") {
+        message = "⚠️ Обнаружен цикл отрицательной стоимости.\n" + message;
+      } else if (result.error_type === "iteration_limit_exceeded") {
+        message = "⚠️ Превышено число итераций.\n" + message;
+        color = "#e67e22";
+      }
+      
+      document.getElementById('step-info').innerHTML = 
+        `<span style="color:${color}; white-space: pre-line;">${message}</span>`;
+      
+      // Отобразить шаги, если они есть (частичный результат)
+      if (result.steps?.length > 0) {
+        algoSteps = result;
+        currentStepIndex = 0;
+        render();
+        renderStepInfo();
+      }
+      updateControls();
+      return;
+    }
+    
+    // === УСПЕШНОЕ ВЫПОЛНЕНИЕ ===
+    algoSteps = result;
     currentStepIndex = 0;
     render();
     renderStepInfo();
@@ -377,6 +416,7 @@ async function startAlgorithm() {
   } catch (err) {
     console.error('Ошибка API:', err);
     document.getElementById('step-info').textContent = `Ошибка: ${err.message}`;
+    alert(`Ошибка соединения с сервером: ${err.message}`);
   }
 }
 
