@@ -1,0 +1,28 @@
+<!-- frontend/index.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Визуализация потока минимальной стоимости</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Граф: построение и визуализация</h1>
+    </header>
+    <main>
+        <section id="canvas-container">
+            <canvas id="graph-canvas" width="800" height="600"></canvas>
+        </section>
+        <aside id="controls">
+            <h3>Управление</h3>
+            <button id="btn-start" disabled>Start</button>
+            <button id="btn-prev" disabled>Prev</button>
+            <button id="btn-next" disabled>Next</button>
+            <div id="step-info">Ожидание запуска...</div>
+        </aside>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>
