@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from models import AlgorithmRequest
+from .models import AlgorithmRequest
 
 app = FastAPI(title="MCMF Solver API", version="0.1.0")
 
