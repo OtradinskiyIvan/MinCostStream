@@ -34,18 +34,47 @@ function drawEdge(edge, flow = null, isHighlighted = false) {
   const tgt = state.nodes.find(n => n.id === edge.target);
   if (!src || !tgt) return;
 
-  const dx = tgt.x - src.x, dy = tgt.y - src.y;
+  const dx = tgt.x - src.x;
+  const dy = tgt.y - src.y;
   const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len, uy = dy / len;
-  
+  const ux = dx / len;
+  const uy = dy / len;
+
+  // Точки начала и конца линии (с отступом 20px от центра узлов)
+  const x1 = src.x + ux * 20;
+  const y1 = src.y + uy * 20;
+  const x2 = tgt.x - ux * 20;
+  const y2 = tgt.y - uy * 20;
+
+  // Основная линия
   ctx.beginPath();
-  ctx.moveTo(src.x + ux * 20, src.y + uy * 20);
-  ctx.lineTo(tgt.x - ux * 20, tgt.y - uy * 20);
-  
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
   ctx.strokeStyle = isHighlighted ? '#e74c3c' : '#95a5a6';
   ctx.lineWidth = isHighlighted ? 3 : 2;
   ctx.stroke();
 
+  // Стрелка
+  const angle = Math.atan2(dy, dx);
+  const arrowLen = 12;
+  const arrowAngle = Math.PI / 6; // 30 градусов
+
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(
+    x2 - arrowLen * Math.cos(angle - arrowAngle),
+    y2 - arrowLen * Math.sin(angle - arrowAngle)
+  );
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(
+    x2 - arrowLen * Math.cos(angle + arrowAngle),
+    y2 - arrowLen * Math.sin(angle + arrowAngle)
+  );
+  ctx.strokeStyle = isHighlighted ? '#e74c3c' : '#95a5a6';
+  ctx.lineWidth = isHighlighted ? 3 : 2;
+  ctx.stroke();
+
+  // Подпись (смещена перпендикулярно линии)
   ctx.fillStyle = '#2c3e50';
   ctx.font = '12px monospace';
   const midX = (src.x + tgt.x) / 2 + uy * 10;
@@ -53,7 +82,6 @@ function drawEdge(edge, flow = null, isHighlighted = false) {
   const label = flow !== null ? `c:${edge.cost} f:${flow.toFixed(1)}` : `c:${edge.cost}`;
   ctx.fillText(label, midX, midY);
 }
-
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
@@ -101,7 +129,59 @@ canvas.addEventListener('click', (e) => {
     state.nodes.push(newNode);
     render();
   }
-  render();
+  render();function drawEdge(edge, flow = null, isHighlighted = false) {
+  const src = state.nodes.find(n => n.id === edge.source);
+  const tgt = state.nodes.find(n => n.id === edge.target);
+  if (!src || !tgt) return;
+
+  const dx = tgt.x - src.x;
+  const dy = tgt.y - src.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+
+  // Точки начала и конца линии (с отступом 20px от центра узлов)
+  const x1 = src.x + ux * 20;
+  const y1 = src.y + uy * 20;
+  const x2 = tgt.x - ux * 20;
+  const y2 = tgt.y - uy * 20;
+
+  // Основная линия
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.strokeStyle = isHighlighted ? '#e74c3c' : '#95a5a6';
+  ctx.lineWidth = isHighlighted ? 3 : 2;
+  ctx.stroke();
+
+  // Стрелка
+  const angle = Math.atan2(dy, dx);
+  const arrowLen = 12;
+  const arrowAngle = Math.PI / 6; // 30 градусов
+
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(
+    x2 - arrowLen * Math.cos(angle - arrowAngle),
+    y2 - arrowLen * Math.sin(angle - arrowAngle)
+  );
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(
+    x2 - arrowLen * Math.cos(angle + arrowAngle),
+    y2 - arrowLen * Math.sin(angle + arrowAngle)
+  );
+  ctx.strokeStyle = isHighlighted ? '#e74c3c' : '#95a5a6';
+  ctx.lineWidth = isHighlighted ? 3 : 2;
+  ctx.stroke();
+
+  // Подпись (смещена перпендикулярно линии)
+  ctx.fillStyle = '#2c3e50';
+  ctx.font = '12px monospace';
+  const midX = (src.x + tgt.x) / 2 + uy * 10;
+  const midY = (src.y + tgt.y) / 2 - ux * 10;
+  const label = flow !== null ? `c:${edge.cost} f:${flow.toFixed(1)}` : `c:${edge.cost}`;
+  ctx.fillText(label, midX, midY);
+}
 });
 
 function openEdgeModal(sourceId, targetId) {
