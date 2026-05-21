@@ -82,6 +82,7 @@ function drawEdge(edge, flow = null, isHighlighted = false) {
   const label = flow !== null ? `c:${edge.cost} f:${flow.toFixed(1)}` : `c:${edge.cost}`;
   ctx.fillText(label, midX, midY);
 }
+
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
@@ -98,6 +99,14 @@ function render() {
     const isHigh = currentStepData?.highlighted_nodes?.includes(node.id) ?? false;
     drawNode(node, isHigh);
   });
+}
+
+// ==================== ФУНКЦИЯ ИНВАЛИДАЦИИ РЕЗУЛЬТАТОВ ====================
+function invalidateAlgorithmResults() {
+  algoSteps = null;
+  currentStepIndex = -1;
+  document.getElementById('step-info').textContent = 'Граф изменён. Требуется повторный запуск.';
+  updateControls();
 }
 
 // ==================== ОБРАБОТЧИКИ СОБЫТИЙ CANVAS ====================
@@ -127,83 +136,54 @@ canvas.addEventListener('click', (e) => {
       x, y
     };
     state.nodes.push(newNode);
+    invalidateAlgorithmResults(); // Граф изменён - инвалидируем результаты
     render();
   }
-  render();function drawEdge(edge, flow = null, isHighlighted = false) {
-  const src = state.nodes.find(n => n.id === edge.source);
-  const tgt = state.nodes.find(n => n.id === edge.target);
-  if (!src || !tgt) return;
-
-  const dx = tgt.x - src.x;
-  const dy = tgt.y - src.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len;
-  const uy = dy / len;
-
-  // Точки начала и конца линии (с отступом 20px от центра узлов)
-  const x1 = src.x + ux * 20;
-  const y1 = src.y + uy * 20;
-  const x2 = tgt.x - ux * 20;
-  const y2 = tgt.y - uy * 20;
-
-  // Основная линия
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.strokeStyle = isHighlighted ? '#e74c3c' : '#95a5a6';
-  ctx.lineWidth = isHighlighted ? 3 : 2;
-  ctx.stroke();
-
-  // Стрелка
-  const angle = Math.atan2(dy, dx);
-  const arrowLen = 12;
-  const arrowAngle = Math.PI / 6; // 30 градусов
-
-  ctx.beginPath();
-  ctx.moveTo(x2, y2);
-  ctx.lineTo(
-    x2 - arrowLen * Math.cos(angle - arrowAngle),
-    y2 - arrowLen * Math.sin(angle - arrowAngle)
-  );
-  ctx.moveTo(x2, y2);
-  ctx.lineTo(
-    x2 - arrowLen * Math.cos(angle + arrowAngle),
-    y2 - arrowLen * Math.sin(angle + arrowAngle)
-  );
-  ctx.strokeStyle = isHighlighted ? '#e74c3c' : '#95a5a6';
-  ctx.lineWidth = isHighlighted ? 3 : 2;
-  ctx.stroke();
-
-  // Подпись (смещена перпендикулярно линии)
-  ctx.fillStyle = '#2c3e50';
-  ctx.font = '12px monospace';
-  const midX = (src.x + tgt.x) / 2 + uy * 10;
-  const midY = (src.y + tgt.y) / 2 - ux * 10;
-  const label = flow !== null ? `c:${edge.cost} f:${flow.toFixed(1)}` : `c:${edge.cost}`;
-  ctx.fillText(label, midX, midY);
-}
+  render();
 });
 
 function openEdgeModal(sourceId, targetId) {
-  const cost = parseFloat(prompt(`Стоимость ребра ${sourceId}→${targetId}:`, '1'));
-  const capacity = parseFloat(prompt(`Пропускная способность:`, '10'));
+  // 1. Сбор данных с дефолтными значениями
+  const costInput = prompt(`Стоимость ребра ${sourceId}→${targetId}:`, '1');
+  const capacityInput = prompt(`Пропускная способность:`, '10');
   
-  if (!isNaN(cost) && !isNaN(capacity) && cost >= 0 && capacity > 0) {
-    state.edges.push({
-      id: `${sourceId}->${targetId}`,
-      source: sourceId,
-      target: targetId,
-      cost,
-      capacity
-    });
-    render();
+  // 2. Строгая валидация
+  const cost = parseFloat(costInput);
+  const capacity = parseFloat(capacityInput);
+  
+  const isValid = !isNaN(cost) && !isNaN(capacity) && isFinite(cost) && isFinite(capacity) && capacity > 0;
+  
+  if (!isValid) {
+    alert('Ошибка: введите корректные числовые значения. Пропускная способность должна быть > 0.');
+    return; // Прерываем выполнение, если ввод некорректен
   }
+  
+  // 3. Создание "чистого" объекта ребра (без поля id, чтобы не конфликтовать с Pydantic)
+  const newEdge = {
+    source: sourceId,
+    target: targetId,
+    cost: cost,
+    capacity: capacity
+  };
+  
+  // 4. Отладочный лог (обязательно проверьте консоль браузера F12)
+  console.log('➕ Добавление ребра:', newEdge);
+  console.log('📊 Текущее состояние рёбер до:', state.edges.map(e => `${e.source}->${e.target}`));
+  
+  state.edges.push(newEdge);
+  
+  console.log('📊 Текущее состояние рёбер после:', state.edges.map(e => `${e.source}->${e.target}`));
+  
+  // 5. Инвалидация и перерисовка
+  invalidateAlgorithmResults();
+  render();
 }
 
 // ==================== УПРАВЛЕНИЕ ИНТЕРФЕЙСОМ ====================
 function updateControls() {
-  document.getElementById('btn-start').disabled = state.nodes.length < 2 || state.edges.length === 0;
-  document.getElementById('btn-prev').disabled = currentStepIndex <= 0;
+  const hasGraph = state.nodes.length >= 2 && state.edges.length > 0;
+  document.getElementById('btn-start').disabled = !hasGraph;
+  document.getElementById('btn-prev').disabled = !algoSteps || currentStepIndex <= 0;
   
   const totalSteps = algoSteps?.steps?.length || 0;
   document.getElementById('btn-next').disabled = !algoSteps || currentStepIndex >= totalSteps - 1;
