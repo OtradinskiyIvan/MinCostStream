@@ -4,7 +4,8 @@ const state = {
   edges: [],
   selectedNode: null,
   isDrawingEdge: false,
-  nextNodeId: 1
+  nextNodeId: 1,
+  isDeleteMode: false  // ← Флаг режима удаления
 };
 
 let algoSteps = null;
@@ -101,6 +102,36 @@ function render() {
   });
 }
 
+// ==================== ПОИСК РЕБРА ПОД КУРСОРОМ ====================
+function findEdgeAtPosition(x, y, threshold = 10) {
+  // Перебираем рёбра в обратном порядке — чтобы выбирать верхние (нарисованные позже)
+  for (let i = state.edges.length - 1; i >= 0; i--) {
+    const edge = state.edges[i];
+    const src = state.nodes.find(n => n.id === edge.source);
+    const tgt = state.nodes.find(n => n.id === edge.target);
+    if (!src || !tgt) continue;
+
+    // Вектор ребра
+    const dx = tgt.x - src.x;
+    const dy = tgt.y - src.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) continue;
+
+    // Проекция точки (x,y) на отрезок [src, tgt]
+    const t = Math.max(0, Math.min(1, ((x - src.x) * dx + (y - src.y) * dy) / (len * len)));
+    const projX = src.x + t * dx;
+    const projY = src.y + t * dy;
+    
+    // Расстояние от точки до проекции
+    const dist = Math.hypot(x - projX, y - projY);
+    
+    if (dist <= threshold) {
+      return edge; // Найдено ребро под курсором
+    }
+  }
+  return null;
+}
+
 // ==================== ФУНКЦИЯ ИНВАЛИДАЦИИ РЕЗУЛЬТАТОВ ====================
 function invalidateAlgorithmResults() {
   algoSteps = null;
@@ -115,6 +146,49 @@ canvas.addEventListener('click', (e) => {
   const x = Math.round(e.clientX - rect.left);
   const y = Math.round(e.clientY - rect.top);
   
+  // === РЕЖИМ УДАЛЕНИЯ ===
+  if (state.isDeleteMode) {
+    // 1. Пробуем удалить ребро (приоритет — тонкий элемент)
+    const clickedEdge = findEdgeAtPosition(x, y);
+    if (clickedEdge) {
+      state.edges = state.edges.filter(ed => 
+        !(ed.source === clickedEdge.source && ed.target === clickedEdge.target)
+      );
+      console.log('🗑️ Удалено ребро:', `${clickedEdge.source}->${clickedEdge.target}`);
+      invalidateAlgorithmResults();
+      render();
+      return; // Завершаем обработку
+    }
+    
+    // 2. Если не ребро — пробуем удалить узел
+    const clickedNode = state.nodes.find(n => Math.hypot(n.x - x, n.y - y) < 20);
+    if (clickedNode) {
+      const deletedId = clickedNode.id;
+      // Удаляем узел
+      state.nodes = state.nodes.filter(n => n.id !== deletedId);
+      // Каскадно удаляем все инцидентные рёбра
+      const beforeCount = state.edges.length;
+      state.edges = state.edges.filter(ed => 
+        ed.source !== deletedId && ed.target !== deletedId
+      );
+      console.log(`🗑️ Удален узел ${deletedId} и ${beforeCount - state.edges.length} связанных рёбер`);
+      
+      // Сбрасываем выбор, если удалили выбранный узел
+      if (state.selectedNode === deletedId) {
+        state.selectedNode = null;
+        state.isDrawingEdge = false;
+      }
+      
+      invalidateAlgorithmResults();
+      render();
+      return;
+    }
+    
+    // Клик в пустоту в режиме удаления — ничего не делаем
+    return;
+  }
+  
+  // === ОБЫЧНЫЙ РЕЖИМ (добавление) ===
   const clickedNode = state.nodes.find(n => Math.hypot(n.x - x, n.y - y) < 20);
   
   if (clickedNode) {
@@ -136,7 +210,7 @@ canvas.addEventListener('click', (e) => {
       x, y
     };
     state.nodes.push(newNode);
-    invalidateAlgorithmResults(); // Граф изменён - инвалидируем результаты
+    invalidateAlgorithmResults();
     render();
   }
   render();
@@ -166,7 +240,7 @@ function openEdgeModal(sourceId, targetId) {
     capacity: capacity
   };
   
-  // 4. Отладочный лог (обязательно проверьте консоль браузера F12)
+  // 4. Отладочный лог
   console.log('➕ Добавление ребра:', newEdge);
   console.log('📊 Текущее состояние рёбер до:', state.edges.map(e => `${e.source}->${e.target}`));
   
@@ -180,17 +254,37 @@ function openEdgeModal(sourceId, targetId) {
 }
 
 // ==================== УПРАВЛЕНИЕ ИНТЕРФЕЙСОМ ====================
+const btnDeleteMode = document.getElementById('btn-delete-mode');
+
 function updateControls() {
   const hasGraph = state.nodes.length >= 2 && state.edges.length > 0;
-  document.getElementById('btn-start').disabled = !hasGraph;
-  document.getElementById('btn-prev').disabled = !algoSteps || currentStepIndex <= 0;
+  
+  // Кнопка Start: неактивна в режиме удаления или при пустом графе
+  document.getElementById('btn-start').disabled = !hasGraph || state.isDeleteMode;
+  
+  // Кнопки навигации: неактивны в режиме удаления или без результатов
+  document.getElementById('btn-prev').disabled = 
+    state.isDeleteMode || !algoSteps || currentStepIndex <= 0;
   
   const totalSteps = algoSteps?.steps?.length || 0;
-  document.getElementById('btn-next').disabled = !algoSteps || currentStepIndex >= totalSteps - 1;
+  document.getElementById('btn-next').disabled = 
+    state.isDeleteMode || !algoSteps || currentStepIndex >= totalSteps - 1;
+  
+  // Текст кнопки удаления
+  if (btnDeleteMode) {
+    btnDeleteMode.textContent = state.isDeleteMode ? '✅ Выход из удаления' : '🗑️ Удаление';
+  }
 }
 
 function renderStepInfo() {
   const info = document.getElementById('step-info');
+  
+  // Если в режиме удаления — показываем подсказку
+  if (state.isDeleteMode) {
+    info.innerHTML = '<div style="color:#e74c3c; font-weight:bold;">🗑️ РЕЖИМ УДАЛЕНИЯ: клик по элементу для удаления</div>';
+    return;
+  }
+  
   if (!algoSteps || currentStepIndex < 0) {
     info.textContent = 'Ожидание запуска...';
     return;
@@ -208,6 +302,35 @@ function renderStepInfo() {
     </div>
     ${isFinal ? '<div style="margin-top:6px; color:#27ae60; font-weight:bold;">✅ Алгоритм завершён. Результат найден.</div>' : ''}
   `;
+}
+
+// ==================== ПЕРЕКЛЮЧЕНИЕ РЕЖИМА УДАЛЕНИЯ ====================
+if (btnDeleteMode) {
+  btnDeleteMode.onclick = () => {
+    state.isDeleteMode = !state.isDeleteMode;
+    
+    // Визуальное переключение кнопки
+    btnDeleteMode.classList.toggle('active', state.isDeleteMode);
+    
+    // Добавляем/убираем класс на body для смены курсора
+    document.body.classList.toggle('delete-mode', state.isDeleteMode);
+    
+    // Сброс промежуточных состояний при входе в режим удаления
+    if (state.isDeleteMode) {
+      state.selectedNode = null;
+      state.isDrawingEdge = false;
+    } else {
+      // Выход из режима удаления — обновляем информацию
+      if (algoSteps) {
+        renderStepInfo();
+      } else {
+        document.getElementById('step-info').textContent = 'Ожидание запуска...';
+      }
+    }
+    
+    updateControls();
+    render();
+  };
 }
 
 // ==================== ИНТЕГРАЦИЯ С API ====================
@@ -275,6 +398,13 @@ document.getElementById('btn-next').onclick = () => {
     updateControls();
   }
 };
+
+// Инициализация режима удаления
+if (btnDeleteMode) {
+  state.isDeleteMode = false;
+  btnDeleteMode.classList.remove('active');
+  document.body.classList.remove('delete-mode');
+}
 
 render();
 updateControls();
