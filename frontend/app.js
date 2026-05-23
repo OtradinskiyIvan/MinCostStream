@@ -5,7 +5,7 @@ const state = {
   selectedNode: null,
   isDrawingEdge: false,
   nextNodeId: 1,
-  isDeleteMode: false  // ← Флаг режима удаления
+  isDeleteMode: false
 };
 
 let algoSteps = null;
