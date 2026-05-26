@@ -93,18 +93,23 @@ function drawEdge(edge, flow = null, isHighlighted = false) {
   ctx.fillText(label, midX, midY);
 }
 
+// ==================== ОБНОВЛЕННАЯ ФУНКЦИЯ RENDER ====================
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
   const currentStepData = algoSteps?.steps?.[currentStepIndex];
-
+  // УБРАНО: if (!currentStepData) return; — это блокировало отрисовку базового графа
+  
+  // Рендерим рёбра
   state.edges.forEach(edge => {
     const edgeKey = `${edge.source}->${edge.target}`;
+    // Если есть данные шага — используем их, иначе показываем базовое состояние
     const flow = currentStepData?.edge_flows?.[edgeKey] ?? null;
     const isHigh = currentStepData?.highlighted_edges?.includes(edgeKey) ?? false;
     drawEdge(edge, flow, isHigh);
   });
 
+  // Рендерим узлы
   state.nodes.forEach(node => {
     const isHigh = currentStepData?.highlighted_nodes?.includes(node.id) ?? false;
     drawNode(node, isHigh);
@@ -265,19 +270,14 @@ function openEdgeModal(sourceId, targetId) {
 // ==================== УПРАВЛЕНИЕ ИНТЕРФЕЙСОМ ====================
 const btnDeleteMode = document.getElementById('btn-delete-mode');
 
+// ==================== ОБНОВЛЕННАЯ ФУНКЦИЯ UPDATE CONTROLS ====================
 function updateControls() {
   const hasGraph = state.nodes.length >= 2 && state.edges.length > 0;
-  
-  // Кнопка Start: неактивна в режиме удаления или при пустом графе
   document.getElementById('btn-start').disabled = !hasGraph || state.isDeleteMode;
-  
-  // Кнопки навигации: неактивны в режиме удаления или без результатов
-  document.getElementById('btn-prev').disabled = 
-    state.isDeleteMode || !algoSteps || currentStepIndex <= 0;
+  document.getElementById('btn-prev').disabled = currentStepIndex <= 0;
   
   const totalSteps = algoSteps?.steps?.length || 0;
-  document.getElementById('btn-next').disabled = 
-    state.isDeleteMode || !algoSteps || currentStepIndex >= totalSteps - 1;
+  document.getElementById('btn-next').disabled = !algoSteps || currentStepIndex >= totalSteps - 1;
   
   // Текст кнопки удаления
   if (btnDeleteMode) {
@@ -285,6 +285,7 @@ function updateControls() {
   }
 }
 
+// ==================== ОБНОВЛЕННАЯ ФУНКЦИЯ RENDER STEP INFO ====================
 function renderStepInfo() {
   const info = document.getElementById('step-info');
   
@@ -303,14 +304,32 @@ function renderStepInfo() {
   const totalSteps = algoSteps.steps.length;
   const isFinal = currentStepIndex === totalSteps - 1;
 
-  info.innerHTML = `
+  let detailsHTML = `
     <strong>Шаг ${step.step_index} / ${totalSteps - 1}:</strong> ${step.description}<br>
     <div style="margin-top:4px; color: #2c3e50;">
-      Поток: ${step.current_flow?.toFixed(2) || 0} | 
-      Стоимость: ${step.current_cost?.toFixed(2) || 0}
+      Поток: ${step.current_flow?.toFixed(2) || '—'} | 
+      Стоимость: ${step.current_cost?.toFixed(2) || '—'}
     </div>
-    ${isFinal ? '<div style="margin-top:6px; color:#27ae60; font-weight:bold;">✅ Алгоритм завершён. Результат найден.</div>' : ''}
   `;
+
+  // Отображение внутренних состояний для шагов explore/relax
+  if ((step.type === 'explore' || step.type === 'relax') && step.distances) {
+    detailsHTML += `
+      <div style="margin-top:8px; padding:6px; background:#f1f5f9; border-radius:4px; font-size:12px;">
+        <strong>Расстояния (dist):</strong> ${JSON.stringify(step.distances)}<br>
+        <strong>В очереди:</strong> ${step.in_queue.join(', ') || 'пусто'}<br>
+        <strong>Потенциалы:</strong> ${JSON.stringify(step.potentials)}
+      </div>
+    `;
+  }
+
+  if (isFinal && step.type === 'finish') {
+    detailsHTML += '<div style="margin-top:6px; color:#27ae60; font-weight:bold;">✅ Алгоритм завершён.</div>';
+  } else if (isFinal && step.type === 'augment') {
+    detailsHTML += '<div style="margin-top:6px; color:#27ae60; font-weight:bold;">✅ Оптимальный поток найден.</div>';
+  }
+
+  info.innerHTML = detailsHTML;
 }
 
 // ==================== ПЕРЕКЛЮЧЕНИЕ РЕЖИМА УДАЛЕНИЯ ====================

@@ -63,10 +63,14 @@ def _bellman_ford_init(adj: dict, src: int, n: int) -> Optional[List[float]]:
     return h
 
 
-def _dijkstra_reduced(adj: dict, src: int, sink: int, n: int, h: List[float]) -> Optional[Tuple[List[float], List[int], List[Any]]]:
-    dist = [float('inf')] * n
-    parent_node = [-1] * n
-    parent_edge = [None] * n
+# backend/algorithm.py
+
+def _dijkstra_reduced(adj, src, sink, n, h, idx_to_node, trace, step_counter):
+    """Дейкстра с пошаговым трейсингом обработки вершин и релаксации рёбер."""
+    INF = float('inf')
+    dist = [INF] * n
+    prev_v = [-1] * n
+    prev_e = [None] * n
     dist[src] = 0.0
     
     heap = [(0.0, src)]
@@ -77,23 +81,50 @@ def _dijkstra_reduced(adj: dict, src: int, sink: int, n: int, h: List[float]) ->
         if visited[u]:
             continue
         visited[u] = True
+        
+        # 📝 Шаг: извлечение вершины из очереди
+        trace.append({
+            "step_index": step_counter[0],
+            "type": "explore",
+            "description": f"Обработка вершины {idx_to_node[u]} (dist={d_u:.2f})",
+            "highlighted_nodes": [idx_to_node[u]],
+            "highlighted_edges": [],
+            "distances": {idx_to_node[i]: round(dist[i], 2) for i in range(n) if dist[i] < INF},
+            "in_queue": sorted([idx_to_node[v] for _, v in heap if not visited[v]]),
+            "potentials": {idx_to_node[i]: round(h[i], 2) for i in range(n)},
+            "current_flow": None, "current_cost": None, "edge_flows": None
+        })
+        step_counter[0] += 1
+        
         if u == sink:
             break
-        if u not in adj:
-            continue
+            
         for e in adj[u]:
             if e.cap - e.flow <= 1e-9:
                 continue
             reduced_cost = e.cost + h[u] - h[e.to]
             if dist[e.to] > dist[u] + reduced_cost + 1e-9:
                 dist[e.to] = dist[u] + reduced_cost
-                parent_node[e.to] = u
-                parent_edge[e.to] = e
+                prev_v[e.to] = u
+                prev_e[e.to] = e
                 heapq.heappush(heap, (dist[e.to], e.to))
-    
-    if dist[sink] == float('inf'):
-        return None
-    return dist, parent_node, parent_edge
+                
+                edge_label = e.label if e.label else f"{idx_to_node[u]}->{idx_to_node[e.to]}"
+                # 📝 Шаг: успешная релаксация ребра
+                trace.append({
+                    "step_index": step_counter[0],
+                    "type": "relax",
+                    "description": f"Релаксация {idx_to_node[u]}→{idx_to_node[e.to]}: dist обновлён до {dist[e.to]:.2f}",
+                    "highlighted_nodes": [idx_to_node[u], idx_to_node[e.to]],
+                    "highlighted_edges": [edge_label],
+                    "distances": {idx_to_node[i]: round(dist[i], 2) for i in range(n) if dist[i] < INF},
+                    "in_queue": sorted([idx_to_node[v] for _, v in heap if not visited[v]]),
+                    "potentials": {idx_to_node[i]: round(h[i], 2) for i in range(n)},
+                    "current_flow": None, "current_cost": None, "edge_flows": None
+                })
+                step_counter[0] += 1
+                
+    return dist, prev_v, prev_e
 
 
 def solve_mcmf(req_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -103,195 +134,118 @@ def solve_mcmf(req_data: Dict[str, Any]) -> Dict[str, Any]:
         src_idx = node_to_idx[req_data["source_node"]]
         sink_idx = node_to_idx[req_data["sink_node"]]
     except KeyError as e:
-        return {
-            "status": "error",
-            "error_type": "invalid_node_reference",
-            "message": f"Узел {e} не найден в списке вершин",
-            "steps": [],
-            "min_cost": None,
-            "total_flow": None
-        }
+        return {"status": "error", "error_type": "invalid_node_reference", 
+                "message": f"Узел {e} не найден в списке вершин", "steps": [], "min_cost": None, "total_flow": None}
     
     target_flow = float(req_data["required_flow"])
     n_nodes = len(req_data["nodes"])
 
-    # Вырожденные случаи
+    # Вырожденные случаи (без изменений)
     if target_flow <= 1e-9:
-        return {
-            "status": "success",
-            "min_cost": 0.0,
-            "total_flow": 0.0,
-            "steps": [{
-                "step_index": 0,
-                "description": "Требуемый поток равен нулю. Решение тривиально.",
-                "current_flow": 0.0,
-                "current_cost": 0.0,
-                "edge_flows": {},
-                "highlighted_nodes": [idx_to_node.get(src_idx, ""), idx_to_node.get(sink_idx, "")],
-                "highlighted_edges": []
-            }]
-        }
+        return {"status": "success", "min_cost": 0.0, "total_flow": 0.0,
+                "steps": [{"step_index": 0, "type": "done", "description": "Требуемый поток равен нулю.",
+                           "current_flow": 0.0, "current_cost": 0.0, "edge_flows": {},
+                           "highlighted_nodes": [], "highlighted_edges": [], "potentials": {}}]}
     
     if src_idx == sink_idx:
-        return {
-            "status": "success",
-            "min_cost": 0.0,
-            "total_flow": target_flow,
-            "steps": [{
-                "step_index": 0,
-                "description": f"Исток и сток совпадают ({idx_to_node[src_idx]}). Поток доставлен с нулевой стоимостью.",
-                "current_flow": target_flow,
-                "current_cost": 0.0,
-                "edge_flows": {},
-                "highlighted_nodes": [idx_to_node[src_idx]],
-                "highlighted_edges": []
-            }]
-        }
+        return {"status": "success", "min_cost": 0.0, "total_flow": target_flow,
+                "steps": [{"step_index": 0, "type": "done", 
+                           "description": f"Исток и сток совпадают ({idx_to_node[src_idx]}).",
+                           "current_flow": target_flow, "current_cost": 0.0, "edge_flows": {},
+                           "highlighted_nodes": [idx_to_node[src_idx]], "highlighted_edges": [], "potentials": {}}]}
 
     potentials = _bellman_ford_init(adj, src_idx, n_nodes)
     if potentials is None:
-        return {
-            "status": "error",
-            "error_type": "negative_cycle_in_input",
-            "message": "Граф содержит достижимый из истока цикл отрицательной стоимости. Задача не имеет конечного минимума.",
-            "steps": [],
-            "min_cost": None,
-            "total_flow": None
-        }
+        return {"status": "error", "error_type": "negative_cycle_in_input",
+                "message": "Обнаружен достижимый цикл отрицательной стоимости.", "steps": [], "min_cost": None, "total_flow": None}
 
+    trace = []
+    step_counter = [0]
     total_flow = 0.0
     total_cost = 0.0
-    steps = []
     edge_flows = {}
 
-    steps.append({
-        "step_index": 0,
-        "description": "Инициализация: вычислены начальные потенциалы. Нулевой поток, нулевая стоимость.",
-        "current_flow": 0.0,
-        "current_cost": 0.0,
-        "edge_flows": {},
+    # Шаг 0: Инициализация потенциалов
+    trace.append({
+        "step_index": step_counter[0], "type": "init",
+        "description": "Инициализация: вычислены начальные потенциалы.",
+        "current_flow": 0.0, "current_cost": 0.0, "edge_flows": {},
         "highlighted_nodes": [idx_to_node[src_idx], idx_to_node[sink_idx]],
         "highlighted_edges": [],
         "potentials": {idx_to_node[i]: round(p, 2) for i, p in enumerate(potentials)}
     })
+    step_counter[0] += 1
 
-    step_count = 1
     MAX_ITERATIONS = len(req_data["edges"]) * max(1, int(target_flow)) + n_nodes + 5
+    iter_count = 1
 
-    while total_flow < target_flow - 1e-9:
-        if step_count > MAX_ITERATIONS:
-            return {
-                "status": "error",
-                "error_type": "iteration_limit_exceeded",
-                "message": "Превышено максимальное число итераций.",
-                "steps": steps,
-                "min_cost": round(total_cost, 2),
-                "total_flow": round(total_flow, 2)
-            }
-
-        path_result = _dijkstra_reduced(adj, src_idx, sink_idx, n_nodes, potentials)
+    while total_flow < target_flow - 1e-9 and iter_count <= MAX_ITERATIONS:
+        path_res = _dijkstra_reduced(adj, src_idx, sink_idx, n_nodes, potentials, idx_to_node, trace, step_counter)
         
-        if path_result is None:
-            # Проверка достижимости стока
-            visited = set()
-            stack = [src_idx]
-            while stack:
-                u = stack.pop()
-                if u in visited or u not in adj:
-                    continue
-                visited.add(u)
-                for e in adj[u]:
-                    if e.cap - e.flow > 1e-9 and e.to not in visited:
-                        stack.append(e.to)
+        if path_res[0] is None or path_res[0][sink_idx] == float('inf'):
+            trace.append({
+                "step_index": step_counter[0], "type": "finish",
+                "description": "Увеличивающий путь не найден. Требуемый поток недостижим.",
+                "current_flow": total_flow, "current_cost": total_cost, "edge_flows": dict(edge_flows),
+                "highlighted_nodes": [], "highlighted_edges": [], "potentials": {}
+            })
+            break
             
-            if sink_idx not in visited:
-                status_msg = "Увеличивающий путь не найден. Требуемый поток недостижим."
-                if total_flow > 1e-9:
-                    status_msg += f" Доставлено {total_flow:.2f} из {target_flow:.2f}."
-                
-                steps.append({
-                    "step_index": step_count,
-                    "description": status_msg,
-                    "current_flow": total_flow,
-                    "current_cost": total_cost,
-                    "edge_flows": dict(edge_flows),
-                    "highlighted_nodes": [],
-                    "highlighted_edges": []
-                })
-                return {
-                    "status": "success",
-                    "min_cost": round(total_cost, 2),
-                    "total_flow": round(total_flow, 2),
-                    "steps": steps,
-                    "warning": "Требуемый поток недостижим при заданных ограничениях"
-                }
-            else:
-                return {
-                    "status": "error",
-                    "error_type": "algorithm_internal_error",
-                    "message": "Внутренняя ошибка: сток достижим, но путь не найден.",
-                    "steps": steps,
-                    "min_cost": round(total_cost, 2),
-                    "total_flow": round(total_flow, 2)
-                }
+        dist, prev_v, prev_e = path_res
         
-        dist, parent_node, parent_edge = path_result
-
+        # Обновление потенциалов
         for i in range(n_nodes):
             if dist[i] < float('inf'):
                 potentials[i] += dist[i]
-
+                
+        # Определение объёма проталкивания
         push = target_flow - total_flow
         curr = sink_idx
         while curr != src_idx:
-            e = parent_edge[curr]
-            push = min(push, e.cap - e.flow)
-            curr = parent_node[curr]
-        
+            push = min(push, prev_e[curr].cap - prev_e[curr].flow)
+            curr = prev_v[curr]
+            
         if push < 1e-9:
             break
 
+        # Проталкивание потока
         curr = sink_idx
         path_nodes = [idx_to_node[src_idx]]
         path_edges = []
         path_real_cost = 0.0
         
         while curr != src_idx:
-            e = parent_edge[curr]
+            e = prev_e[curr]
             e.flow += push
-            rev_e = adj[e.to][e.rev]
-            rev_e.flow -= push
+            adj[e.to][e.rev].flow -= push
             
-            if e.label:
-                edge_flows[e.label] = edge_flows.get(e.label, 0.0) + push
-                path_edges.append(e.label)
+            lbl = e.label if e.label else e.orig_label
+            if lbl:
+                edge_flows[lbl] = edge_flows.get(lbl, 0.0) + push
+                path_edges.append(lbl)
                 path_real_cost += e.cost
-            elif e.orig_label:
-                edge_flows[e.orig_label] = edge_flows.get(e.orig_label, 0.0) - push
-                path_edges.append(e.orig_label)
-                path_real_cost += e.cost
-                
             path_nodes.append(idx_to_node[curr])
-            curr = parent_node[curr]
-
+            curr = prev_v[curr]
+            
         total_flow += push
         total_cost += push * path_real_cost
-
-        steps.append({
-            "step_index": step_count,
-            "description": f"Путь найден. Проталкивание: {push:.2f}. Стоимость шага: {push * path_real_cost:.2f}",
-            "current_flow": round(total_flow, 2),
-            "current_cost": round(total_cost, 2),
+        
+        # 📝 Шаг: завершение аугментации
+        trace.append({
+            "step_index": step_counter[0], "type": "augment",
+            "description": f"Аугментация завершена. Проталкивание: {push:.2f}. Стоимость шага: {push * path_real_cost:.2f}",
+            "current_flow": round(total_flow, 2), "current_cost": round(total_cost, 2),
             "edge_flows": {k: round(v, 2) for k, v in edge_flows.items()},
             "highlighted_nodes": list(set(path_nodes)),
             "highlighted_edges": path_edges,
             "potentials": {idx_to_node[i]: round(p, 2) for i, p in enumerate(potentials)}
         })
-        step_count += 1
+        step_counter[0] += 1
+        iter_count += 1
 
     return {
-        "status": "success",
+        "status": "success" if total_flow >= target_flow - 1e-9 else "success_with_warning",
         "min_cost": round(total_cost, 2),
         "total_flow": round(total_flow, 2),
-        "steps": steps
+        "steps": trace
     }
